@@ -1,0 +1,48 @@
+server:
+  port: 8080
+  grpc_port: 50051
+  env: local                # local | dev | prod
+
+database:
+  dsn: "postgres://auth_user:secret@localhost:5432/auth_db?sslmode=disable"
+  max_open_conns: 25
+  min_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 30m
+  health_timeout: 5s
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+jwt:
+  private_key_path: "./keys/private.pem"
+  public_key_path: "./keys/public.pem"
+  access_token_ttl: 15m
+  refresh_token_ttl: 168h   # 7 days
+
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic_registered: "user.registered"
+  topic_login: "user.login"
+  topic_pw_changed: "user.password_changed"
+
+email:
+  provider: "sendgrid"      # sendgrid | ses
+  sendgrid_key: "SG.xxxxxxxxxxxxxxxxxxxx"
+  from_address: "no-reply@open-stash.io"
+  from_name: "Open Stash"
+
+auth:
+  rate_limit_attempts: 5
+  rate_limit_window: 15m
+  password_min_length: 8
+  email_verify_ttl: 24h
+  password_reset_ttl: 1h
+  refresh_cookie_name: "refresh_token"
+  refresh_cookie_path: "/api/v1/auth"
+
+totp:
+  issuer: "OpenStash"

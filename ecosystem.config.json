@@ -1,0 +1,17 @@
+{
+  "apps": [
+    {
+      "name": "sentinel",
+      "script": "./bin/sentinel",
+      "cwd": "/Users/alkushpipania/projects/open-stash/sentinel",
+      "interpreter": "none",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 5,
+      "restart_delay": 2000,
+      "log_date_format": "YYYY-MM-DD HH:mm:ss",
+      "out_file": "./logs/sentinel.out.log",
+      "error_file": "./logs/sentinel.err.log"
+    }
+  ]
+}
