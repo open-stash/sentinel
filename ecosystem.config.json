@@ -3,7 +3,6 @@
     {
       "name": "sentinel",
       "script": "./bin/sentinel",
-      "cwd": "/Users/alkushpipania/projects/open-stash/sentinel",
       "interpreter": "none",
       "watch": false,
       "autorestart": true,
