@@ -17,7 +17,7 @@ import (
 	"github.com/open-stash/sentinel/internal/service"
 	dbpkg "github.com/open-stash/sentinel/pkg/db"
 	jwtpkg "github.com/open-stash/sentinel/pkg/jwt"
-	"github.com/open-stash/sentinel/pkg/kafka"
+	"github.com/open-stash/sentinel/pkg/mq"
 	redispkg "github.com/open-stash/sentinel/pkg/redis"
 )
 
@@ -27,9 +27,9 @@ type Container struct {
 	DBPool *pgxpool.Pool
 	DB     *dbpkg.Queries
 
-	RedisClient   redispkg.Client
-	JWTSigner     *jwtpkg.Signer
-	KafkaProducer *kafka.Producer
+	RedisClient redispkg.Client
+	JWTSigner   *jwtpkg.Signer
+	MQPublisher *mq.Publisher
 
 	UserRepo      repository.UserRepository
 	RefreshRepo   repository.RefreshTokenRepository
@@ -78,19 +78,10 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("create jwt signer: %w", err)
 	}
 
-	kafkaCfg := kafka.DefaultConfig(cfg.Kafka.Brokers, "sentinel")
-	kafkaProducer, err := kafka.NewProducer(kafkaCfg,
-		kafka.WithTopics(
-			kafka.TopicUserRegistered,
-			kafka.TopicUserLogin,
-			kafka.TopicUserEmailVerified,
-			kafka.TopicUserPasswordChanged,
-			kafka.TopicUserLogout,
-		),
-	)
+	mqPublisher, err := mq.NewPublisher(cfg.RabbitMQ)
 	if err != nil {
 		dbPool.Close()
-		return nil, fmt.Errorf("create kafka producer: %w", err)
+		return nil, fmt.Errorf("create rabbitmq publisher: %w", err)
 	}
 
 	userRepo := pgrepo.NewUserRepository(queries)
@@ -112,7 +103,7 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		emailVerRepo,
 		passResetRepo,
 		jwtSigner,
-		kafkaProducer,
+		mqPublisher,
 		cfg,
 	)
 
@@ -127,9 +118,9 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		DBPool: dbPool,
 		DB:     queries,
 
-		RedisClient:   redisClient,
-		JWTSigner:     jwtSigner,
-		KafkaProducer: kafkaProducer,
+		RedisClient: redisClient,
+		JWTSigner:   jwtSigner,
+		MQPublisher: mqPublisher,
 
 		UserRepo:      userRepo,
 		RefreshRepo:   refreshRepo,
@@ -155,8 +146,8 @@ func (c *Container) Shutdown(_ context.Context) error {
 
 	var errAll error
 
-	if c.KafkaProducer != nil {
-		if err := c.KafkaProducer.Close(); err != nil {
+	if c.MQPublisher != nil {
+		if err := c.MQPublisher.Close(); err != nil {
 			errAll = errors.Join(errAll, err)
 		}
 	}

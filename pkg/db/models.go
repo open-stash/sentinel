@@ -45,4 +45,5 @@ type User struct {
 	LockedUntil     pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	Name            string
 }

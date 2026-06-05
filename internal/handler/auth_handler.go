@@ -37,16 +37,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, verifyToken, err := h.svc.Register(c.Request.Context(), req.Email, req.Password)
+	user, err := h.svc.Register(c.Request.Context(), req.Name, req.Email, req.Password)
 	if err != nil {
 		handleServiceErr(c, err)
 		return
 	}
 
 	c.JSON(http.StatusCreated, ok("registered successfully, verify your email to activate your account", gin.H{
-		"user_id":      user.ID,
-		"email":        user.Email,
-		"verify_token": verifyToken, // TODO: remove once email sending is implemented
+		"user_id": user.ID,
+		"email":   user.Email,
 	}))
 }
 

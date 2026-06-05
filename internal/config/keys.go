@@ -24,11 +24,14 @@ const (
 	KeyJWTAccessTokenTTL  = "jwt.access_token_ttl"
 	KeyJWTRefreshTokenTTL = "jwt.refresh_token_ttl"
 
-	// Kafka
-	KeyKafkaBrokers        = "kafka.brokers"
-	KeyKafkaTopicRegistered = "kafka.topic_registered"
-	KeyKafkaTopicLogin      = "kafka.topic_login"
-	KeyKafkaTopicPwChanged  = "kafka.topic_pw_changed"
+	// RabbitMQ (notification publisher → beacon)
+	KeyRabbitMQBrokerURL    = "rabbitmq.broker_url"
+	KeyRabbitMQExchangeName = "rabbitmq.exchange_name"
+	KeyRabbitMQExchangeType = "rabbitmq.exchange_type"
+	KeyRabbitMQRoutingKey   = "rabbitmq.routing_key"
+
+	// App
+	KeyAppFrontendBaseURL = "app.frontend_base_url"
 
 	// Email
 	KeyEmailProvider    = "email.provider"

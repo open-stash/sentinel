@@ -15,7 +15,8 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
-	Kafka    KafkaConfig
+	RabbitMQ RabbitMQConfig
+	App      AppConfig
 	Email    EmailConfig
 	Auth     AuthConfig
 	TOTP     TOTPConfig
@@ -49,11 +50,19 @@ type JWTConfig struct {
 	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
 }
 
-type KafkaConfig struct {
-	Brokers        []string `mapstructure:"brokers"`
-	TopicRegistered string  `mapstructure:"topic_registered"`
-	TopicLogin      string  `mapstructure:"topic_login"`
-	TopicPwChanged  string  `mapstructure:"topic_pw_changed"`
+// RabbitMQConfig configures the publisher that emits notification events to
+// beacon (the email worker). Replaces the previous Kafka producer.
+type RabbitMQConfig struct {
+	BrokerURL    string `mapstructure:"broker_url"`
+	ExchangeName string `mapstructure:"exchange_name"`
+	ExchangeType string `mapstructure:"exchange_type"`
+	RoutingKey   string `mapstructure:"routing_key"`
+}
+
+// AppConfig holds front-end facing values, e.g. the base URL used to build
+// links embedded in emails (verification, password reset).
+type AppConfig struct {
+	FrontendBaseURL string `mapstructure:"frontend_base_url"`
 }
 
 type EmailConfig struct {

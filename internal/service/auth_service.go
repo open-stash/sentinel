@@ -13,7 +13,6 @@ import (
 	"github.com/open-stash/sentinel/internal/domain"
 	"github.com/open-stash/sentinel/internal/repository"
 	jwtpkg "github.com/open-stash/sentinel/pkg/jwt"
-	"github.com/open-stash/sentinel/pkg/kafka"
 	"github.com/open-stash/sentinel/pkg/password"
 	totppkg "github.com/open-stash/sentinel/pkg/totp"
 )
@@ -26,7 +25,7 @@ type AuthService struct {
 	emailVerRepo  repository.EmailVerificationRepository
 	passResetRepo repository.PasswordResetRepository
 	jwtSigner     *jwtpkg.Signer
-	producer      *kafka.Producer
+	notifier      Notifier
 	cfg           config.Config
 }
 
@@ -38,7 +37,7 @@ func NewAuthService(
 	emailVerRepo repository.EmailVerificationRepository,
 	passResetRepo repository.PasswordResetRepository,
 	jwtSigner *jwtpkg.Signer,
-	producer *kafka.Producer,
+	notifier Notifier,
 	cfg config.Config,
 ) *AuthService {
 	return &AuthService{
@@ -49,31 +48,34 @@ func NewAuthService(
 		emailVerRepo:  emailVerRepo,
 		passResetRepo: passResetRepo,
 		jwtSigner:     jwtSigner,
-		producer:      producer,
+		notifier:      notifier,
 		cfg:           cfg,
 	}
 }
 
 // ─── Register ────────────────────────────────────────────────────────────────
 
-func (s *AuthService) Register(ctx context.Context, email, rawPassword string) (*domain.User, string, error) {
+func (s *AuthService) Register(ctx context.Context, name, email, rawPassword string) (*domain.User, error) {
 	if err := password.CheckStrength(rawPassword); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	hash, err := password.Hash(rawPassword)
 	if err != nil {
-		return nil, "", fmt.Errorf("register: hash password: %w", err)
+		return nil, fmt.Errorf("register: hash password: %w", err)
 	}
 
-	user, err := s.userRepo.Create(ctx, email, hash, domain.RoleUser)
+	user, err := s.userRepo.Create(ctx, name, email, hash, domain.RoleUser)
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicate) {
-			return nil, "", ErrEmailTaken
+			return nil, ErrEmailTaken
 		}
-		return nil, "", fmt.Errorf("register: create user: %w", err)
+		return nil, fmt.Errorf("register: create user: %w", err)
 	}
 
+	// The verification token is sent only via the welcome email (published to the
+	// queue below). It is never returned to the caller, so it cannot leak into an
+	// API response.
 	verifyToken := secureToken()
 	expiresAt := time.Now().Add(s.cfg.Auth.EmailVerifyTTL)
 	if err := s.emailVerRepo.Create(ctx, verifyToken, user.ID, expiresAt); err != nil {
@@ -81,14 +83,15 @@ func (s *AuthService) Register(ctx context.Context, email, rawPassword string) (
 	}
 
 	go func() {
-		_ = s.producer.Enqueue(context.Background(), kafka.TopicUserRegistered, user.ID, userRegisteredEvent{
-			UserID:    user.ID,
+		verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.cfg.App.FrontendBaseURL, verifyToken)
+		_ = s.notifier.Publish(context.Background(), eventUserWelcome, welcomePayload{
+			Name:      user.Name,
 			Email:     user.Email,
-			OccuredAt: time.Now(),
+			VerifyURL: verifyURL,
 		})
 	}()
 
-	return user, verifyToken, nil
+	return user, nil
 }
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -142,15 +145,6 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginOutput, e
 		return nil, fmt.Errorf("login: store refresh token: %w", err)
 	}
 
-	go func() {
-		_ = s.producer.Enqueue(context.Background(), kafka.TopicUserLogin, user.ID, userLoginEvent{
-			UserID:    user.ID,
-			Email:     user.Email,
-			IPAddress: in.IPAddress,
-			OccuredAt: time.Now(),
-		})
-	}()
-
 	return &LoginOutput{
 		Tokens: &domain.TokenPair{AccessToken: accessToken, RefreshToken: refreshToken},
 		User:   user,
@@ -168,13 +162,7 @@ func (s *AuthService) Logout(ctx context.Context, accessToken, refreshToken, use
 		_ = s.refreshRepo.Delete(ctx, refreshToken)
 	}
 
-	go func() {
-		_ = s.producer.Enqueue(context.Background(), kafka.TopicUserLogout, userID, userLogoutEvent{
-			UserID:    userID,
-			OccuredAt: time.Now(),
-		})
-	}()
-
+	// No email on logout (beacon has no logout template).
 	return nil
 }
 
@@ -299,9 +287,14 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	_ = s.refreshRepo.DeleteAllForUser(ctx, pr.UserID)
 
 	go func() {
-		_ = s.producer.Enqueue(context.Background(), kafka.TopicUserPasswordChanged, pr.UserID, userPasswordChangedEvent{
-			UserID:    pr.UserID,
-			OccuredAt: time.Now(),
+		user, err := s.userRepo.GetByID(context.Background(), pr.UserID)
+		if err != nil {
+			slog.Error("password_changed: load user for notification", "userID", pr.UserID, "error", err)
+			return
+		}
+		_ = s.notifier.Publish(context.Background(), eventUserPasswordChanged, passwordChangedPayload{
+			Name:  user.Name,
+			Email: user.Email,
 		})
 	}()
 

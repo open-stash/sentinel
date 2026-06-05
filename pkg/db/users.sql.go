@@ -12,19 +12,25 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, role)
-VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at
+INSERT INTO users (name, email, password_hash, role)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name
 `
 
 type CreateUserParams struct {
+	Name         string
 	Email        string
 	PasswordHash string
 	Role         string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.Role)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Name,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Role,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -38,12 +44,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.LockedUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Name,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at FROM users
+SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name FROM users
 WHERE email = $1
 `
 
@@ -62,12 +69,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.LockedUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Name,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at FROM users
+SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name FROM users
 WHERE id = $1
 `
 
@@ -86,6 +94,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.LockedUntil,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Name,
 	)
 	return i, err
 }

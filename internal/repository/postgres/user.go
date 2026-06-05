@@ -25,8 +25,9 @@ func NewUserRepository(q *db.Queries) repository.UserRepository {
 	return &userRepo{q: q}
 }
 
-func (r *userRepo) Create(ctx context.Context, email, passwordHash string, role domain.Role) (*domain.User, error) {
+func (r *userRepo) Create(ctx context.Context, name, email, passwordHash string, role domain.Role) (*domain.User, error) {
 	u, err := r.q.CreateUser(ctx, db.CreateUserParams{
+		Name:         name,
 		Email:        email,
 		PasswordHash: passwordHash,
 		Role:         string(role),
@@ -133,6 +134,7 @@ func parseUUID(id string) (pgtype.UUID, error) {
 func toDomainUser(u db.User) *domain.User {
 	du := &domain.User{
 		ID:              uuid.UUID(u.ID.Bytes).String(),
+		Name:            u.Name,
 		Email:           u.Email,
 		PasswordHash:    u.PasswordHash,
 		Role:            domain.Role(u.Role),
