@@ -33,6 +33,20 @@ type RefreshToken struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type Session struct {
+	ID         pgtype.UUID
+	UserID     pgtype.UUID
+	TokenHash  string
+	UserAgent  pgtype.Text
+	Device     pgtype.Text
+	Browser    pgtype.Text
+	Os         pgtype.Text
+	CreatedAt  pgtype.Timestamptz
+	LastSeenAt pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
 type User struct {
 	ID              pgtype.UUID
 	Email           string

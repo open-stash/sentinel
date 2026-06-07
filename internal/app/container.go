@@ -34,16 +34,14 @@ type Container struct {
 	UserRepo      repository.UserRepository
 	RefreshRepo   repository.RefreshTokenRepository
 	BlacklistRepo repository.BlacklistRepository
-	RateLimitRepo repository.RateLimitRepository
 	EmailVerRepo  repository.EmailVerificationRepository
 	PassResetRepo repository.PasswordResetRepository
 
 	AuthService *service.AuthService
 	AuthHandler *handler.AuthHandler
 
-	AuthMiddleware      gin.HandlerFunc
-	LoginRateMiddleware gin.HandlerFunc
-	Router              *gin.Engine
+	AuthMiddleware gin.HandlerFunc
+	Router         *gin.Engine
 }
 
 func NewContainer(ctx context.Context) (*Container, error) {
@@ -88,29 +86,27 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	refreshRepo := pgrepo.NewRefreshTokenRepository(queries)
 	emailVerRepo := pgrepo.NewEmailVerificationRepository(queries)
 	passResetRepo := pgrepo.NewPasswordResetRepository(queries)
+	sessionRepo := pgrepo.NewSessionRepository(queries)
 	blacklistRepo := rrepo.NewBlacklistRepository(redisClient)
-	rateLimitRepo := rrepo.NewRateLimitRepository(
-		redisClient,
-		uint64(cfg.Auth.RateLimitAttempts),
-		cfg.Auth.RateLimitWindow,
-	)
+
+	// Session lifetime reuses the (long-lived) refresh-token TTL.
+	sessionSvc := service.NewSessionService(sessionRepo, cfg.JWT.RefreshTokenTTL)
 
 	authSvc := service.NewAuthService(
 		userRepo,
 		refreshRepo,
 		blacklistRepo,
-		rateLimitRepo,
 		emailVerRepo,
 		passResetRepo,
 		jwtSigner,
 		mqPublisher,
+		sessionSvc,
 		cfg,
 	)
 
 	authHandler := handler.NewAuthHandler(authSvc)
 	authMiddleware := middleware.AuthRequired(jwtSigner, blacklistRepo)
-	loginRateMiddleware := middleware.LoginRateLimit(rateLimitRepo)
-	httpRouter := router.Setup(authHandler, authMiddleware, loginRateMiddleware)
+	httpRouter := router.Setup(authHandler, authMiddleware)
 
 	return &Container{
 		Config: cfg,
@@ -125,16 +121,14 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		UserRepo:      userRepo,
 		RefreshRepo:   refreshRepo,
 		BlacklistRepo: blacklistRepo,
-		RateLimitRepo: rateLimitRepo,
 		EmailVerRepo:  emailVerRepo,
 		PassResetRepo: passResetRepo,
 
 		AuthService: authSvc,
 		AuthHandler: authHandler,
 
-		AuthMiddleware:      authMiddleware,
-		LoginRateMiddleware: loginRateMiddleware,
-		Router:              httpRouter,
+		AuthMiddleware: authMiddleware,
+		Router:         httpRouter,
 	}, nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"github.com/open-stash/sentinel/internal/handler"
 )
 
-func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, loginRateLimitMiddleware gin.HandlerFunc) *gin.Engine {
+func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
@@ -21,8 +21,9 @@ func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, log
 	auth := v1.Group("/auth")
 	{
 		auth.POST("/register", authHandler.Register)
-		auth.POST("/login", loginRateLimitMiddleware, authHandler.Login)
+		auth.POST("/login", authHandler.Login)
 		auth.POST("/refresh", authHandler.Refresh)
+		auth.POST("/introspect", authHandler.Introspect) // service-to-service token validation
 		auth.GET("/verify-email", authHandler.VerifyEmail)
 		auth.POST("/forgot-password", authHandler.ForgotPassword)
 		auth.POST("/reset-password", authHandler.ResetPassword)
@@ -32,6 +33,11 @@ func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc, log
 			protected.POST("/logout", authHandler.Logout)
 			protected.POST("/totp/setup", authHandler.SetupTOTP)
 			protected.POST("/totp/enable", authHandler.EnableTOTP)
+
+			// Session / device management
+			protected.GET("/sessions", authHandler.ListSessions)
+			protected.DELETE("/sessions/:id", authHandler.RevokeSession)
+			protected.DELETE("/sessions", authHandler.RevokeOtherSessions)
 		}
 	}
 

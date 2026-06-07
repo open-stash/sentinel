@@ -60,7 +60,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Email:     req.Email,
 		Password:  req.Password,
 		TOTPCode:  req.TOTPCode,
-		IPAddress: c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {
@@ -106,7 +105,6 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	pair, err := h.svc.Refresh(c.Request.Context(), service.RefreshInput{
 		RefreshToken: refreshToken,
-		IPAddress:    c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
 	})
 	if err != nil {
@@ -202,6 +200,72 @@ func (h *AuthHandler) EnableTOTP(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ok("2FA enabled", nil))
+}
+
+// Introspect lets other services (kyber, holocron) validate an access token
+// against live session state. Send the token as Bearer; returns {active, ...}.
+// Always 200 — an invalid token is just {"active": false}.
+func (h *AuthHandler) Introspect(c *gin.Context) {
+	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	res := h.svc.Introspect(c.Request.Context(), token)
+	if !res.Active {
+		c.JSON(http.StatusOK, gin.H{"active": false})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"active": true,
+		"sub":    res.UserID,
+		"email":  res.Email,
+		"role":   res.Role,
+		"sid":    res.SID,
+	})
+}
+
+// ─── session management ────────────────────────────────────────────────────────
+
+func (h *AuthHandler) ListSessions(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	sessions, err := h.svc.ListSessions(c.Request.Context(), claims.Subject)
+	if err != nil {
+		slog.Error("list sessions", "error", err, "userID", claims.Subject)
+		c.JSON(http.StatusInternalServerError, errResp("could not load sessions"))
+		return
+	}
+
+	out := make([]gin.H, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, gin.H{
+			"id":         s.ID,
+			"current":    s.ID == claims.SID,
+			"device":     s.Device,
+			"browser":    s.Browser,
+			"os":         s.OS,
+			"created_at": s.CreatedAt,
+			"last_seen":  s.LastSeenAt,
+		})
+	}
+	c.JSON(http.StatusOK, ok("", gin.H{"sessions": out}))
+}
+
+func (h *AuthHandler) RevokeSession(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	id := c.Param("id")
+	if err := h.svc.RevokeSession(c.Request.Context(), id, claims.Subject); err != nil {
+		slog.Error("revoke session", "error", err, "userID", claims.Subject, "sessionID", id)
+		c.JSON(http.StatusInternalServerError, errResp("could not revoke session"))
+		return
+	}
+	c.JSON(http.StatusOK, ok("session revoked", nil))
+}
+
+func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	if err := h.svc.RevokeOtherSessions(c.Request.Context(), claims.Subject, claims.SID); err != nil {
+		slog.Error("revoke other sessions", "error", err, "userID", claims.Subject)
+		c.JSON(http.StatusInternalServerError, errResp("could not revoke sessions"))
+		return
+	}
+	c.JSON(http.StatusOK, ok("signed out of other devices", nil))
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import (
 	"github.com/open-stash/sentinel/internal/config"
 	"github.com/open-stash/sentinel/internal/domain"
 	"github.com/open-stash/sentinel/internal/repository"
+	"github.com/mileusna/useragent"
 	jwtpkg "github.com/open-stash/sentinel/pkg/jwt"
 	"github.com/open-stash/sentinel/pkg/password"
 	totppkg "github.com/open-stash/sentinel/pkg/totp"
@@ -21,11 +22,11 @@ type AuthService struct {
 	userRepo      repository.UserRepository
 	refreshRepo   repository.RefreshTokenRepository
 	blacklistRepo repository.BlacklistRepository
-	rateLimitRepo repository.RateLimitRepository
 	emailVerRepo  repository.EmailVerificationRepository
 	passResetRepo repository.PasswordResetRepository
 	jwtSigner     *jwtpkg.Signer
 	notifier      Notifier
+	sessionSvc    *SessionService
 	cfg           config.Config
 }
 
@@ -33,22 +34,22 @@ func NewAuthService(
 	userRepo repository.UserRepository,
 	refreshRepo repository.RefreshTokenRepository,
 	blacklistRepo repository.BlacklistRepository,
-	rateLimitRepo repository.RateLimitRepository,
 	emailVerRepo repository.EmailVerificationRepository,
 	passResetRepo repository.PasswordResetRepository,
 	jwtSigner *jwtpkg.Signer,
 	notifier Notifier,
+	sessionSvc *SessionService,
 	cfg config.Config,
 ) *AuthService {
 	return &AuthService{
 		userRepo:      userRepo,
 		refreshRepo:   refreshRepo,
 		blacklistRepo: blacklistRepo,
-		rateLimitRepo: rateLimitRepo,
 		emailVerRepo:  emailVerRepo,
 		passResetRepo: passResetRepo,
 		jwtSigner:     jwtSigner,
 		notifier:      notifier,
+		sessionSvc:    sessionSvc,
 		cfg:           cfg,
 	}
 }
@@ -132,23 +133,50 @@ func (s *AuthService) Login(ctx context.Context, in LoginInput) (*LoginOutput, e
 	}
 
 	_ = s.userRepo.ResetFailedLogins(ctx, user.ID)
-	_ = s.rateLimitRepo.Reset(ctx, in.IPAddress)
 
-	accessToken, err := s.jwtSigner.Sign(user.ID, user.Email, string(user.Role), s.cfg.JWT.AccessTokenTTL)
+	rawSession, sess, err := s.createSession(ctx, user.ID, in.UserAgent)
+	if err != nil {
+		return nil, fmt.Errorf("login: create session: %w", err)
+	}
+
+	accessToken, err := s.jwtSigner.Sign(user.ID, user.Email, string(user.Role), sess.ID, s.cfg.JWT.AccessTokenTTL)
 	if err != nil {
 		return nil, fmt.Errorf("login: sign access token: %w", err)
 	}
 
-	refreshToken := secureToken()
-	expiresAt := time.Now().Add(s.cfg.JWT.RefreshTokenTTL)
-	if err := s.refreshRepo.Store(ctx, refreshToken, user.ID, in.IPAddress, in.UserAgent, expiresAt); err != nil {
-		return nil, fmt.Errorf("login: store refresh token: %w", err)
-	}
-
+	// The "refresh token" carried in the cookie is now the opaque session token.
 	return &LoginOutput{
-		Tokens: &domain.TokenPair{AccessToken: accessToken, RefreshToken: refreshToken},
+		Tokens: &domain.TokenPair{AccessToken: accessToken, RefreshToken: rawSession},
 		User:   user,
 	}, nil
+}
+
+// createSession captures device metadata and persists a session.
+func (s *AuthService) createSession(ctx context.Context, userID, uaString string) (string, *domain.Session, error) {
+	ua := useragent.Parse(uaString)
+	return s.sessionSvc.Create(ctx, userID, SessionMeta{
+		UserAgent: uaString,
+		Device:    deviceLabel(ua),
+		Browser:   ua.Name,
+		OS:        ua.OS,
+	})
+}
+
+func deviceLabel(ua useragent.UserAgent) string {
+	switch {
+	case ua.Mobile && ua.Device != "":
+		return ua.Device
+	case ua.Mobile:
+		return "Mobile"
+	case ua.Tablet:
+		return "Tablet"
+	case ua.Desktop:
+		return "Desktop"
+	case ua.Device != "":
+		return ua.Device
+	default:
+		return "Unknown"
+	}
 }
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -159,7 +187,7 @@ func (s *AuthService) Logout(ctx context.Context, accessToken, refreshToken, use
 	}
 
 	if refreshToken != "" {
-		_ = s.refreshRepo.Delete(ctx, refreshToken)
+		_ = s.sessionSvc.RevokeByToken(ctx, refreshToken)
 	}
 
 	// No email on logout (beacon has no logout template).
@@ -169,39 +197,80 @@ func (s *AuthService) Logout(ctx context.Context, accessToken, refreshToken, use
 // ─── Refresh ─────────────────────────────────────────────────────────────────
 
 func (s *AuthService) Refresh(ctx context.Context, in RefreshInput) (*domain.TokenPair, error) {
-	rt, err := s.refreshRepo.Get(ctx, in.RefreshToken)
+	// The cookie holds the opaque session token; validate it (checks expiry/revocation).
+	sess, err := s.sessionSvc.Validate(ctx, in.RefreshToken)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrInvalidToken
-		}
-		return nil, fmt.Errorf("refresh: get token: %w", err)
-	}
-
-	if time.Now().After(rt.ExpiresAt) {
-		_ = s.refreshRepo.Delete(ctx, in.RefreshToken)
 		return nil, ErrInvalidToken
 	}
 
-	user, err := s.userRepo.GetByID(ctx, rt.UserID)
+	user, err := s.userRepo.GetByID(ctx, sess.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: get user: %w", err)
 	}
 
-	// Rotate: delete old token before issuing new one
-	_ = s.refreshRepo.Delete(ctx, in.RefreshToken)
-
-	accessToken, err := s.jwtSigner.Sign(user.ID, user.Email, string(user.Role), s.cfg.JWT.AccessTokenTTL)
+	accessToken, err := s.jwtSigner.Sign(user.ID, user.Email, string(user.Role), sess.ID, s.cfg.JWT.AccessTokenTTL)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: sign token: %w", err)
 	}
 
-	newRefresh := secureToken()
-	expiresAt := time.Now().Add(s.cfg.JWT.RefreshTokenTTL)
-	if err := s.refreshRepo.Store(ctx, newRefresh, user.ID, in.IPAddress, in.UserAgent, expiresAt); err != nil {
-		return nil, fmt.Errorf("refresh: store new token: %w", err)
-	}
+	// Session token is unchanged (it's the long-lived credential); only the access token rotates.
+	return &domain.TokenPair{AccessToken: accessToken, RefreshToken: in.RefreshToken}, nil
+}
 
-	return &domain.TokenPair{AccessToken: accessToken, RefreshToken: newRefresh}, nil
+// ─── Introspection (for other services) ────────────────────────────────────────
+
+// IntrospectResult is the answer to "is this access token still valid right now?"
+type IntrospectResult struct {
+	Active bool
+	UserID string
+	Email  string
+	Role   string
+	SID    string
+}
+
+// Introspect fully validates an access token: signature/expiry, jti not blacklisted,
+// AND the backing session still active (not revoked/expired). This is what gives
+// other services near-instant revocation when a session is killed. Never errors on
+// an invalid token — it returns {Active: false}.
+func (s *AuthService) Introspect(ctx context.Context, token string) *IntrospectResult {
+	claims, err := s.jwtSigner.Verify(token)
+	if err != nil {
+		return &IntrospectResult{Active: false}
+	}
+	if blacklisted, _ := s.blacklistRepo.Contains(ctx, claims.ID); blacklisted {
+		return &IntrospectResult{Active: false}
+	}
+	// If the token is bound to a session, the session must still be active.
+	if claims.SID != "" {
+		sess, err := s.sessionSvc.Get(ctx, claims.SID)
+		if err != nil || !sess.Active() {
+			return &IntrospectResult{Active: false}
+		}
+	}
+	return &IntrospectResult{
+		Active: true,
+		UserID: claims.Subject,
+		Email:  claims.Email,
+		Role:   claims.Role,
+		SID:    claims.SID,
+	}
+}
+
+// ─── Session management ────────────────────────────────────────────────────────
+
+// ListSessions returns the user's active sessions (devices) for the management UI.
+func (s *AuthService) ListSessions(ctx context.Context, userID string) ([]domain.Session, error) {
+	return s.sessionSvc.List(ctx, userID)
+}
+
+// RevokeSession revokes a single session the user owns.
+func (s *AuthService) RevokeSession(ctx context.Context, sessionID, userID string) error {
+	return s.sessionSvc.Revoke(ctx, sessionID, userID)
+}
+
+// RevokeOtherSessions revokes all of the user's sessions except the current one.
+func (s *AuthService) RevokeOtherSessions(ctx context.Context, userID, keepSessionID string) error {
+	return s.sessionSvc.RevokeOthers(ctx, userID, keepSessionID)
 }
 
 // ─── Email Verification ───────────────────────────────────────────────────────
@@ -284,7 +353,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	}
 
 	// Revoke all active sessions after password change
-	_ = s.refreshRepo.DeleteAllForUser(ctx, pr.UserID)
+	_ = s.sessionSvc.RevokeAllForUser(ctx, pr.UserID)
 
 	go func() {
 		user, err := s.userRepo.GetByID(context.Background(), pr.UserID)

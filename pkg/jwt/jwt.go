@@ -21,6 +21,7 @@ var (
 type Claims struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
+	SID   string `json:"sid,omitempty"` // session id — links the access token to a revocable session
 	jwt.RegisteredClaims
 	// RegisteredClaims carries:
 	//   Subject   (sub)  → user UUID
@@ -66,11 +67,12 @@ func NewSigner(cfg config.JWTConfig) (*Signer, error) {
 
 // Sign creates and returns a signed RS256 access token for the given user.
 // ttl controls expiry; pass cfg.JWT.AccessTokenTTL from the caller.
-func (s *Signer) Sign(userID, email, role string, ttl time.Duration) (string, error) {
+func (s *Signer) Sign(userID, email, role, sid string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		Email: email,
 		Role:  role,
+		SID:   sid,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			ID:        uuid.NewString(), // jti — blacklisted on logout

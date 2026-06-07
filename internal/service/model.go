@@ -6,7 +6,6 @@ type LoginInput struct {
 	Email     string
 	Password  string
 	TOTPCode  string
-	IPAddress string
 	UserAgent string
 }
 
@@ -17,7 +16,6 @@ type LoginOutput struct {
 
 type RefreshInput struct {
 	RefreshToken string
-	IPAddress    string
 	UserAgent    string
 }
 
