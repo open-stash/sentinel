@@ -283,7 +283,7 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 		Path:     refreshCookiePath,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   refreshCookieMaxAgeS,
 		Expires:  time.Now().Add(time.Duration(refreshCookieMaxAgeS) * time.Second),
 	})
@@ -296,7 +296,7 @@ func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 		Path:     refreshCookiePath,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})

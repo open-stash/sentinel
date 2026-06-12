@@ -7,7 +7,7 @@ import (
 	"github.com/open-stash/sentinel/internal/handler"
 )
 
-func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *gin.Engine {
+func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandler, authMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
@@ -38,6 +38,19 @@ func Setup(authHandler *handler.AuthHandler, authMiddleware gin.HandlerFunc) *gi
 			protected.GET("/sessions", authHandler.ListSessions)
 			protected.DELETE("/sessions/:id", authHandler.RevokeSession)
 			protected.DELETE("/sessions", authHandler.RevokeOtherSessions)
+		}
+	}
+
+	// API keys (for external MCP clients). /verify is service-to-service (no JWT);
+	// the rest are user-scoped.
+	keys := v1.Group("/keys")
+	{
+		keys.POST("/verify", apiKeyHandler.Verify)
+		protected := keys.Group("", authMiddleware)
+		{
+			protected.POST("", apiKeyHandler.Create)
+			protected.GET("", apiKeyHandler.List)
+			protected.DELETE("/:id", apiKeyHandler.Revoke)
 		}
 	}
 
