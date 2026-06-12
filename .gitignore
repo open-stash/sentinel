@@ -3,3 +3,5 @@
 /internal/config/config.yaml
 
 keys
+
+/internal/config/prod.config.yaml
