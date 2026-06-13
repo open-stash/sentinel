@@ -2,8 +2,10 @@ package jwt
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"time"
 
@@ -16,6 +18,10 @@ var (
 	ErrInvalidToken = errors.New("jwt: invalid token")
 	ErrExpiredToken = errors.New("jwt: token expired")
 )
+
+// KeyID labels the signing key in JWT headers + the JWKS, so resource servers
+// (holocron's MCP) can match a token to the right public key.
+const KeyID = "openstash-rs256-1"
 
 // Claims is the payload embedded in every access token.
 type Claims struct {
@@ -135,4 +141,59 @@ func (s *Signer) keyFunc(t *jwt.Token) (any, error) {
 		return nil, fmt.Errorf("jwt: unexpected signing method %q", t.Header["alg"])
 	}
 	return s.publicKey, nil
+}
+
+// OAuthClaims is the payload of an OAuth 2.1 access token issued for the MCP server.
+// `aud` (the resource indicator) + `iss` let the resource server validate the token is
+// for it; `scope`/`client_id` record what was granted and to whom.
+type OAuthClaims struct {
+	Scope    string `json:"scope,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+	jwt.RegisteredClaims
+}
+
+// SignAccess issues an OAuth access token (RS256, same key as session tokens) bound to a
+// user, the requesting client, and the target resource (audience). Used by the OAuth
+// token endpoint; holocron's MCP verifies it via the JWKS below.
+func (s *Signer) SignAccess(
+	userID, clientID, scope, issuer string, audience []string, ttl time.Duration,
+) (string, error) {
+	now := time.Now()
+	claims := OAuthClaims{
+		Scope:    scope,
+		ClientID: clientID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			Issuer:    issuer,
+			Audience:  audience,
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = KeyID
+	signed, err := token.SignedString(s.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("jwt: sign access: %w", err)
+	}
+	return signed, nil
+}
+
+// JWKS returns the public verification key as a JWK Set (RFC 7517), served at
+// /.well-known/jwks.json so MCP resource servers can fetch it and verify signatures.
+func (s *Signer) JWKS() map[string]any {
+	eBytes := big.NewInt(int64(s.publicKey.E)).Bytes()
+	return map[string]any{
+		"keys": []map[string]any{
+			{
+				"kty": "RSA",
+				"use": "sig",
+				"alg": "RS256",
+				"kid": KeyID,
+				"n":   base64.RawURLEncoding.EncodeToString(s.publicKey.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(eBytes),
+			},
+		},
+	}
 }

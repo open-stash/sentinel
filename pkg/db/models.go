@@ -27,6 +27,36 @@ type EmailVerification struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type OauthAuthCode struct {
+	CodeHash      string
+	ClientID      string
+	UserID        pgtype.UUID
+	RedirectUri   string
+	CodeChallenge string
+	Scope         string
+	Resource      string
+	ExpiresAt     pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+}
+
+type OauthClient struct {
+	ClientID     string
+	ClientName   string
+	RedirectUris []string
+	CreatedAt    pgtype.Timestamptz
+}
+
+type OauthRefreshToken struct {
+	TokenHash string
+	ClientID  string
+	UserID    pgtype.UUID
+	Scope     string
+	Resource  string
+	ExpiresAt pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
 type PasswordReset struct {
 	Token     string
 	UserID    pgtype.UUID

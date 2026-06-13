@@ -7,7 +7,7 @@ import (
 	"github.com/open-stash/sentinel/internal/handler"
 )
 
-func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandler, authMiddleware gin.HandlerFunc) *gin.Engine {
+func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandler, oauthHandler *handler.OAuthHandler, authMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
@@ -15,6 +15,19 @@ func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandle
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	// OAuth 2.1 discovery (must live at the domain root so MCP clients can find it).
+	r.GET("/.well-known/oauth-authorization-server", oauthHandler.Metadata)
+	r.GET("/.well-known/jwks.json", oauthHandler.JWKS)
+
+	// OAuth 2.1 endpoints for the MCP server. register/token are public (PKCE is the
+	// proof); /code is called server-side by the holonet consent page (user-authed).
+	oauth := r.Group("/oauth")
+	{
+		oauth.POST("/register", oauthHandler.Register)
+		oauth.POST("/token", oauthHandler.Token)
+		oauth.POST("/code", authMiddleware, oauthHandler.IssueCode)
+	}
 
 	v1 := r.Group("/api/v1")
 

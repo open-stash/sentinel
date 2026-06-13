@@ -20,6 +20,19 @@ type Config struct {
 	Email    EmailConfig
 	Auth     AuthConfig
 	TOTP     TOTPConfig
+	OAuth    OAuthConfig
+}
+
+// OAuthConfig configures sentinel acting as the OAuth 2.1 Authorization Server for the
+// MCP memory server (lets ChatGPT / claude.ai connect). Access tokens are RS256 JWTs
+// signed with the same key as session tokens.
+type OAuthConfig struct {
+	Issuer         string        `mapstructure:"issuer"`            // public AS base, e.g. https://auth.openstash.xyz
+	ConsentURL     string        `mapstructure:"consent_url"`       // where /authorize sends the user to log in + consent
+	ResourceURL    string        `mapstructure:"resource_url"`      // the MCP resource = expected token audience
+	AccessTokenTTL time.Duration `mapstructure:"access_token_ttl"`  // e.g. 1h
+	CodeTTL        time.Duration `mapstructure:"code_ttl"`          // e.g. 60s
+	RefreshTTL     time.Duration `mapstructure:"refresh_token_ttl"` // e.g. 720h (30d)
 }
 
 type ServerConfig struct {

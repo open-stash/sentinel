@@ -108,9 +108,13 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeySvc)
 
+	oauthRepo := pgrepo.NewOAuthRepository(queries)
+	oauthSvc := service.NewOAuthService(oauthRepo, jwtSigner, cfg.OAuth)
+	oauthHandler := handler.NewOAuthHandler(oauthSvc)
+
 	authHandler := handler.NewAuthHandler(authSvc)
 	authMiddleware := middleware.AuthRequired(jwtSigner, blacklistRepo)
-	httpRouter := router.Setup(authHandler, apiKeyHandler, authMiddleware)
+	httpRouter := router.Setup(authHandler, apiKeyHandler, oauthHandler, authMiddleware)
 
 	return &Container{
 		Config: cfg,
