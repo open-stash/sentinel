@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -34,9 +36,17 @@ type registerClientRequest struct {
 }
 
 // Register is Dynamic Client Registration (RFC 7591). Public — ChatGPT/Claude self-register.
+// We decode manually (encoding/json ignores unknown fields) because the global gin decoder
+// is set to reject unknown fields — but DCR payloads carry many fields we don't use
+// (grant_types, response_types, token_endpoint_auth_method, scope, …).
 func (h *OAuthHandler) Register(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client_metadata"})
+		return
+	}
 	var req registerClientRequest
-	if err := c.ShouldBindJSON(&req); err != nil || len(req.RedirectURIs) == 0 {
+	if err := json.Unmarshal(body, &req); err != nil || len(req.RedirectURIs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client_metadata"})
 		return
 	}

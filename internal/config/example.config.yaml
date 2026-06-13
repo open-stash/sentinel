@@ -22,6 +22,14 @@ jwt:
   access_token_ttl: 15m
   refresh_token_ttl: 168h   # 7 days
 
+oauth:                                            # sentinel as OAuth 2.1 AS for the MCP server
+  issuer: "https://auth.openstash.xyz"            # public AS base (prod); use http://localhost:8080 for dev
+  consent_url: "https://app.openstash.xyz/oauth/authorize"  # holonet consent page
+  resource_url: "https://chat.openstash.xyz/mcp"  # MCP resource = token audience
+  access_token_ttl: 1h
+  code_ttl: 60s
+  refresh_token_ttl: 720h                         # 30 days
+
 kafka:
   brokers:
     - "localhost:9092"
