@@ -123,3 +123,35 @@ func (r *oauthRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*rep
 func (r *oauthRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
 	return r.q.RevokeOAuthRefreshToken(ctx, tokenHash)
 }
+
+func (r *oauthRepo) ListConnections(ctx context.Context, userID string) ([]repository.OAuthConnection, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListOAuthConnections(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("oauth repo: list connections: %w", err)
+	}
+	out := make([]repository.OAuthConnection, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, repository.OAuthConnection{
+			ClientID:     row.ClientID,
+			ClientName:   row.ClientName,
+			RedirectURIs: row.RedirectUris,
+			ConnectedAt:  row.ConnectedAt.Time,
+			LastTokenAt:  row.LastTokenAt.Time,
+		})
+	}
+	return out, nil
+}
+
+func (r *oauthRepo) RevokeConnections(ctx context.Context, userID, clientID string) error {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+	return r.q.RevokeOAuthConnections(ctx, db.RevokeOAuthConnectionsParams{
+		UserID: uid, ClientID: clientID,
+	})
+}

@@ -132,6 +132,44 @@ func (h *OAuthHandler) Token(c *gin.Context) {
 	})
 }
 
+// ListConnections returns the apps the user has connected to their memory (authed).
+func (h *OAuthHandler) ListConnections(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, errResp("unauthorized"))
+		return
+	}
+	conns, err := h.svc.ListConnections(c.Request.Context(), claims.Subject)
+	if err != nil {
+		slog.Error("list oauth connections", "error", err, "userID", claims.Subject)
+		c.JSON(http.StatusInternalServerError, errResp("could not load connected apps"))
+		return
+	}
+	out := make([]gin.H, 0, len(conns))
+	for _, cn := range conns {
+		out = append(out, gin.H{
+			"client_id": cn.ClientID, "name": cn.Name,
+			"connected_at": cn.ConnectedAt, "last_active_at": cn.LastActiveAt,
+		})
+	}
+	c.JSON(http.StatusOK, ok("", gin.H{"connections": out}))
+}
+
+// RevokeConnection disconnects an app (authed).
+func (h *OAuthHandler) RevokeConnection(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, errResp("unauthorized"))
+		return
+	}
+	if err := h.svc.RevokeConnection(c.Request.Context(), claims.Subject, c.Param("client_id")); err != nil {
+		slog.Error("revoke oauth connection", "error", err, "userID", claims.Subject)
+		c.JSON(http.StatusInternalServerError, errResp("could not disconnect app"))
+		return
+	}
+	c.JSON(http.StatusOK, ok("App disconnected", nil))
+}
+
 func oauthErrorCode(err error) string {
 	switch {
 	case errors.Is(err, service.ErrOAuthInvalidClient):

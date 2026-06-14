@@ -67,5 +67,12 @@ func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandle
 		}
 	}
 
+	// Connected apps (OAuth grants) — what the user has connected TO their memory.
+	conns := v1.Group("/connections", authMiddleware)
+	{
+		conns.GET("", oauthHandler.ListConnections)
+		conns.DELETE("/:client_id", oauthHandler.RevokeConnection)
+	}
+
 	return r
 }

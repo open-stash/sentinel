@@ -32,3 +32,20 @@ WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now();
 UPDATE oauth_refresh_tokens
 SET revoked_at = now()
 WHERE token_hash = $1;
+
+-- name: ListOAuthConnections :many
+-- One row per app (client) the user has a LIVE grant with — for the "connected apps" view.
+SELECT rt.client_id, c.client_name, c.redirect_uris,
+       min(rt.created_at)::timestamptz AS connected_at,
+       max(rt.created_at)::timestamptz AS last_token_at
+FROM oauth_refresh_tokens rt
+JOIN oauth_clients c ON c.client_id = rt.client_id
+WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > now()
+GROUP BY rt.client_id, c.client_name, c.redirect_uris
+ORDER BY max(rt.created_at) DESC;
+
+-- name: RevokeOAuthConnections :exec
+-- Disconnect an app: revoke all of the user's live refresh tokens for that client.
+UPDATE oauth_refresh_tokens
+SET revoked_at = now()
+WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL;

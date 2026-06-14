@@ -51,6 +51,15 @@ type OAuthRefreshToken struct {
 	Resource string
 }
 
+// OAuthConnection is one app the user has a live grant with (the "connected apps" view).
+type OAuthConnection struct {
+	ClientID     string
+	ClientName   string
+	RedirectURIs []string
+	ConnectedAt  time.Time
+	LastTokenAt  time.Time
+}
+
 // OAuthRepository persists OAuth clients, authorization codes, and refresh tokens.
 type OAuthRepository interface {
 	CreateClient(ctx context.Context, clientID, name string, redirectURIs []string) (*OAuthClient, error)
@@ -61,4 +70,6 @@ type OAuthRepository interface {
 	CreateRefreshToken(ctx context.Context, in CreateOAuthRefreshTokenInput) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*OAuthRefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	ListConnections(ctx context.Context, userID string) ([]OAuthConnection, error)
+	RevokeConnections(ctx context.Context, userID, clientID string) error
 }

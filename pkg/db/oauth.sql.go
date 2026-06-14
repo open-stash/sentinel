@@ -162,6 +162,69 @@ func (q *Queries) GetOAuthRefreshToken(ctx context.Context, tokenHash string) (O
 	return i, err
 }
 
+const listOAuthConnections = `-- name: ListOAuthConnections :many
+SELECT rt.client_id, c.client_name, c.redirect_uris,
+       min(rt.created_at)::timestamptz AS connected_at,
+       max(rt.created_at)::timestamptz AS last_token_at
+FROM oauth_refresh_tokens rt
+JOIN oauth_clients c ON c.client_id = rt.client_id
+WHERE rt.user_id = $1 AND rt.revoked_at IS NULL AND rt.expires_at > now()
+GROUP BY rt.client_id, c.client_name, c.redirect_uris
+ORDER BY max(rt.created_at) DESC
+`
+
+type ListOAuthConnectionsRow struct {
+	ClientID     string
+	ClientName   string
+	RedirectUris []string
+	ConnectedAt  pgtype.Timestamptz
+	LastTokenAt  pgtype.Timestamptz
+}
+
+// One row per app (client) the user has a LIVE grant with — for the "connected apps" view.
+func (q *Queries) ListOAuthConnections(ctx context.Context, userID pgtype.UUID) ([]ListOAuthConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, listOAuthConnections, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOAuthConnectionsRow
+	for rows.Next() {
+		var i ListOAuthConnectionsRow
+		if err := rows.Scan(
+			&i.ClientID,
+			&i.ClientName,
+			&i.RedirectUris,
+			&i.ConnectedAt,
+			&i.LastTokenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeOAuthConnections = `-- name: RevokeOAuthConnections :exec
+UPDATE oauth_refresh_tokens
+SET revoked_at = now()
+WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeOAuthConnectionsParams struct {
+	UserID   pgtype.UUID
+	ClientID string
+}
+
+// Disconnect an app: revoke all of the user's live refresh tokens for that client.
+func (q *Queries) RevokeOAuthConnections(ctx context.Context, arg RevokeOAuthConnectionsParams) error {
+	_, err := q.db.Exec(ctx, revokeOAuthConnections, arg.UserID, arg.ClientID)
+	return err
+}
+
 const revokeOAuthRefreshToken = `-- name: RevokeOAuthRefreshToken :exec
 UPDATE oauth_refresh_tokens
 SET revoked_at = now()

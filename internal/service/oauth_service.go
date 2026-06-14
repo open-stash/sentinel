@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/open-stash/sentinel/internal/config"
@@ -169,6 +171,64 @@ func (s *OAuthService) Metadata() map[string]any {
 
 // JWKS exposes the public verification key set.
 func (s *OAuthService) JWKS() map[string]any { return s.signer.JWKS() }
+
+// Connection is an app the user has connected to their memory (for the settings view).
+type Connection struct {
+	ClientID     string
+	Name         string
+	ConnectedAt  time.Time
+	LastActiveAt time.Time
+}
+
+// ListConnections returns the apps (ChatGPT/Claude/…) with a live OAuth grant.
+func (s *OAuthService) ListConnections(ctx context.Context, userID string) ([]Connection, error) {
+	rows, err := s.repo.ListConnections(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Connection, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Connection{
+			ClientID:     r.ClientID,
+			Name:         friendlyClientName(r.ClientName, r.RedirectURIs),
+			ConnectedAt:  r.ConnectedAt,
+			LastActiveAt: r.LastTokenAt,
+		})
+	}
+	return out, nil
+}
+
+// RevokeConnection disconnects an app (revokes its refresh tokens; current access token
+// keeps working until it expires, ~1h).
+func (s *OAuthService) RevokeConnection(ctx context.Context, userID, clientID string) error {
+	return s.repo.RevokeConnections(ctx, userID, clientID)
+}
+
+// friendlyClientName turns a DCR client into a human label, inferring from the redirect
+// URI host since DCR client_name is often generic/empty.
+func friendlyClientName(name string, redirects []string) string {
+	for _, r := range redirects {
+		u, err := url.Parse(r)
+		if err != nil {
+			continue
+		}
+		h := strings.ToLower(u.Hostname())
+		switch {
+		case strings.Contains(h, "chatgpt.com") || strings.Contains(h, "openai.com"):
+			return "ChatGPT"
+		case strings.Contains(h, "claude.ai") || strings.Contains(h, "anthropic"):
+			return "Claude"
+		case strings.Contains(h, "cursor"):
+			return "Cursor"
+		case h == "localhost" || h == "127.0.0.1":
+			return "Local (Claude Code / Cursor)"
+		}
+	}
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	return "Connected app"
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
