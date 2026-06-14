@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -276,6 +277,25 @@ func claimsFromCtx(c *gin.Context) *jwtpkg.Claims {
 	return claims
 }
 
+// refreshCookieSameSite controls the refresh cookie's SameSite attribute.
+//
+// The browser extension (datapad) reuses the web session: it fetches the refresh
+// cookie from a chrome-extension:// origin, which is cross-site, so the cookie
+// must be SameSite=None (Lax/Strict are withheld on cross-site requests). None
+// requires Secure, which is fine — localhost is a secure context in dev and we
+// serve HTTPS in prod. Overridable via COOKIE_SAMESITE (none|lax|strict);
+// defaults to none so the extension works out of the box.
+func refreshCookieSameSite() http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COOKIE_SAMESITE"))) {
+	case "lax":
+		return http.SameSiteLaxMode
+	case "strict":
+		return http.SameSiteStrictMode
+	default:
+		return http.SameSiteNoneMode
+	}
+}
+
 func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     refreshCookieName,
@@ -283,7 +303,7 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, refreshToken string) {
 		Path:     refreshCookiePath,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: refreshCookieSameSite(),
 		MaxAge:   refreshCookieMaxAgeS,
 		Expires:  time.Now().Add(time.Duration(refreshCookieMaxAgeS) * time.Second),
 	})
@@ -296,7 +316,7 @@ func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 		Path:     refreshCookiePath,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: refreshCookieSameSite(),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
