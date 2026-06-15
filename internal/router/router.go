@@ -44,6 +44,8 @@ func Setup(authHandler *handler.AuthHandler, apiKeyHandler *handler.APIKeyHandle
 		protected := auth.Group("", authMiddleware)
 		{
 			protected.POST("/logout", authHandler.Logout)
+			protected.GET("/me", authHandler.Me)
+			protected.PATCH("/me", authHandler.UpdateProfile)
 			protected.POST("/totp/setup", authHandler.SetupTOTP)
 			protected.POST("/totp/enable", authHandler.EnableTOTP)
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/open-stash/sentinel/internal/domain"
 	"github.com/open-stash/sentinel/internal/service"
 	jwtpkg "github.com/open-stash/sentinel/pkg/jwt"
 	"github.com/open-stash/sentinel/pkg/password"
@@ -267,6 +268,46 @@ func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, ok("signed out of other devices", nil))
+}
+
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+func profileJSON(u *domain.User) gin.H {
+	return gin.H{
+		"id":                u.ID,
+		"email":             u.Email,
+		"name":              u.Name,
+		"bio":               u.Bio,
+		"role":              u.Role,
+		"is_email_verified": u.IsEmailVerified,
+	}
+}
+
+// Me returns the authenticated user's profile.
+func (h *AuthHandler) Me(c *gin.Context) {
+	claims := claimsFromCtx(c)
+	u, err := h.svc.GetProfile(c.Request.Context(), claims.Subject)
+	if err != nil {
+		handleServiceErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ok("profile", profileJSON(u)))
+}
+
+// UpdateProfile updates the user's display name and bio (used by onboarding + account settings).
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	var req updateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errResp(err.Error()))
+		return
+	}
+	claims := claimsFromCtx(c)
+	u, err := h.svc.UpdateProfile(c.Request.Context(), claims.Subject, req.Name, req.Bio)
+	if err != nil {
+		handleServiceErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ok("profile updated", profileJSON(u)))
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

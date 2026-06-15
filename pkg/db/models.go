@@ -101,4 +101,5 @@ type User struct {
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 	Name            string
+	Bio             string
 }

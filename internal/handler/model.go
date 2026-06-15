@@ -28,3 +28,8 @@ type resetPasswordRequest struct {
 type enableTOTPRequest struct {
 	Code string `json:"code" binding:"required,len=6"`
 }
+
+type updateProfileRequest struct {
+	Name string `json:"name" binding:"required,min=1,max=100"`
+	Bio  string `json:"bio"  binding:"omitempty,max=500"`
+}

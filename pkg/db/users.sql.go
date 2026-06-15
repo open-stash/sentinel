@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (name, email, password_hash, role)
 VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name
+RETURNING id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name, bio
 `
 
 type CreateUserParams struct {
@@ -45,12 +45,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Name,
+		&i.Bio,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name FROM users
+SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name, bio FROM users
 WHERE email = $1
 `
 
@@ -70,12 +71,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Name,
+		&i.Bio,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name FROM users
+SELECT id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name, bio FROM users
 WHERE id = $1
 `
 
@@ -95,6 +97,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Name,
+		&i.Bio,
 	)
 	return i, err
 }
@@ -168,6 +171,42 @@ type UpdatePasswordParams struct {
 func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) error {
 	_, err := q.db.Exec(ctx, updatePassword, arg.ID, arg.PasswordHash)
 	return err
+}
+
+const updateProfile = `-- name: UpdateProfile :one
+UPDATE users
+SET name = $2,
+    bio = $3,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, role, is_email_verified, totp_secret, totp_enabled, failed_logins, locked_until, created_at, updated_at, name, bio
+`
+
+type UpdateProfileParams struct {
+	ID   pgtype.UUID
+	Name string
+	Bio  string
+}
+
+func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateProfile, arg.ID, arg.Name, arg.Bio)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.IsEmailVerified,
+		&i.TotpSecret,
+		&i.TotpEnabled,
+		&i.FailedLogins,
+		&i.LockedUntil,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Bio,
+	)
+	return i, err
 }
 
 const updateTOTPSecret = `-- name: UpdateTOTPSecret :exec

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/open-stash/sentinel/internal/config"
@@ -271,6 +272,18 @@ func (s *AuthService) RevokeSession(ctx context.Context, sessionID, userID strin
 // RevokeOtherSessions revokes all of the user's sessions except the current one.
 func (s *AuthService) RevokeOtherSessions(ctx context.Context, userID, keepSessionID string) error {
 	return s.sessionSvc.RevokeOthers(ctx, userID, keepSessionID)
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+// GetProfile returns the user's identity/profile (name, bio, email, …).
+func (s *AuthService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
+	return s.userRepo.GetByID(ctx, userID)
+}
+
+// UpdateProfile updates the user's display name and bio (captured during onboarding).
+func (s *AuthService) UpdateProfile(ctx context.Context, userID, name, bio string) (*domain.User, error) {
+	return s.userRepo.UpdateProfile(ctx, userID, strings.TrimSpace(name), strings.TrimSpace(bio))
 }
 
 // ─── Email Verification ───────────────────────────────────────────────────────

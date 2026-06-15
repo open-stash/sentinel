@@ -68,6 +68,21 @@ func (r *userRepo) GetByEmail(ctx context.Context, email string) (*domain.User, 
 	return toDomainUser(u), nil
 }
 
+func (r *userRepo) UpdateProfile(ctx context.Context, id, name, bio string) (*domain.User, error) {
+	pgID, err := parseUUID(id)
+	if err != nil {
+		return nil, err
+	}
+	u, err := r.q.UpdateProfile(ctx, db.UpdateProfileParams{ID: pgID, Name: name, Bio: bio})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, repository.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("user repo: update profile: %w", err)
+	}
+	return toDomainUser(u), nil
+}
+
 func (r *userRepo) UpdateEmailVerified(ctx context.Context, id string) error {
 	pgID, err := parseUUID(id)
 	if err != nil {
@@ -135,6 +150,7 @@ func toDomainUser(u db.User) *domain.User {
 	du := &domain.User{
 		ID:              uuid.UUID(u.ID.Bytes).String(),
 		Name:            u.Name,
+		Bio:             u.Bio,
 		Email:           u.Email,
 		PasswordHash:    u.PasswordHash,
 		Role:            domain.Role(u.Role),

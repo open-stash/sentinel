@@ -12,6 +12,7 @@ const (
 type User struct {
 	ID              string
 	Name            string
+	Bio             string
 	Email           string
 	PasswordHash    string
 	Role            Role

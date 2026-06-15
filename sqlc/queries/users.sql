@@ -11,6 +11,14 @@ WHERE id = $1;
 SELECT * FROM users
 WHERE email = $1;
 
+-- name: UpdateProfile :one
+UPDATE users
+SET name = $2,
+    bio = $3,
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
 -- name: UpdateEmailVerified :exec
 UPDATE users
 SET is_email_verified = true,
