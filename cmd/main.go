@@ -12,6 +12,9 @@ import (
 	"github.com/open-stash/sentinel/internal/app"
 )
 
+// version is stamped at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -21,7 +24,7 @@ func main() {
 		log.Fatalf("bootstrap: %v", err)
 	}
 	srv := app.NewServer(container)
-	slog.Info("sentinel starting", "addr", srv.Addr(), "env", container.Config.Server.Env)
+	slog.Info("sentinel starting", "version", version, "addr", srv.Addr(), "env", container.Config.Server.Env)
 
 	go func() {
 		if err := srv.Run(); err != nil && err != http.ErrServerClosed {

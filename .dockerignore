@@ -1,0 +1,26 @@
+# Keep the build context small and — importantly — keep secrets out of it, even
+# when building locally (Docker ignores .gitignore, so secrets are listed here too).
+
+# Secrets / local config
+keys/
+internal/config/config.yaml
+internal/config/prod.config.yaml
+
+# Build output
+bin/
+
+# Git & CI
+.git/
+.github/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Editor / OS junk
+.DS_Store
+*.excalidraw
+
+# Process manager
+ecosystem.config.json
